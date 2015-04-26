@@ -493,3 +493,66 @@ func TestIsSameCluster(t *testing.T) {
 		t.Fatalf("Cluster names should not match. %v <-> %v", m.config.ClusterName, clusterName)
 	}
 }
+
+func TestHandleSuspect_ClusterName(t *testing.T) {
+
+}
+
+// handleAlive() should discard messages with different Cluster names
+func TestHandleAlive_ClusterName(t *testing.T) {
+	addr1 := getBindAddr()
+	addr2 := getBindAddr()
+	addr3 := getBindAddr()
+	ip1 := []byte(addr1)
+	ip2 := []byte(addr2)
+	ip3 := []byte(addr3)
+
+	m1 := HostMemberlist(addr1.String(), t, nil)
+
+	// dummy address
+	addr := m1.udpListener.LocalAddr()
+
+	a1 := alive{Node: "node1", ClusterName: m1.config.ClusterName, Addr: ip1, Port: 7946, Incarnation: 1}
+	a2 := alive{Node: "node2", ClusterName: m1.config.ClusterName, Addr: ip2, Port: 7946, Incarnation: 2}
+	a3 := alive{Node: "node3", ClusterName: "badCluster", Addr: ip3, Port: 7946, Incarnation: 2}
+
+	// Encode 2 alive messages with the same cluster name
+	a1buf, err := encode(aliveMsg, a1)
+	if err != nil {
+		t.Fatal("Unexpected error: %v", err)
+	}
+
+	a2buf, err2 := encode(aliveMsg, a2)
+	if err2 != nil {
+		t.Fatal("Unexpected error: %v", err2)
+	}
+
+	// Encode a third message with a different cluster name
+	a3buf, err3 := encode(aliveMsg, a3)
+	if err3 != nil {
+		t.Fatal("Unexpected error: %v", err3)
+	}
+
+	m1.handleAlive(a1buf.Bytes()[1:], addr)
+	m1.handleAlive(a2buf.Bytes()[1:], addr)
+
+	if len(m1.nodes) != 2 {
+		t.Fatalf("Should have 2 nodes in memberlist, but have %v", len(m1.nodes))
+	}
+
+	// Send 3rd message, which should get ignored
+	m1.handleAlive(a3buf.Bytes()[1:], addr)
+
+	if len(m1.nodes) != 2 {
+		t.Fatalf("Should still have 2 nodes in memberlist, but have %v", len(m1.nodes))
+	}
+}
+
+func TestHandleDead_ClusterName(t *testing.T) {
+
+}
+
+// This will be *very* hard to test, due to the length of the method
+func TestReadRemoteState(t *testing.T) {
+
+}
