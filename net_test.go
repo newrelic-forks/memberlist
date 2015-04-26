@@ -494,12 +494,86 @@ func TestIsSameCluster(t *testing.T) {
 	}
 }
 
-func TestHandleSuspect_ClusterName(t *testing.T) {
+// handleSuspect() should discard messages from nodes with different Cluster names
+func TestHandleSuspect(t *testing.T) {
+	addr1 := getBindAddr()
+	addr2 := getBindAddr()
+	addr3 := getBindAddr()
+	ip1 := []byte(addr1)
+	ip2 := []byte(addr2)
+	ip3 := []byte(addr3)
 
+	m1 := HostMemberlist(addr1.String(), t, nil)
+
+	// dummy address
+	addr := m1.udpListener.LocalAddr()
+
+	a1 := alive{Node: "node1", ClusterName: m1.config.ClusterName, Addr: ip1, Port: 7946, Incarnation: 1}
+	a2 := alive{Node: "node2", ClusterName: m1.config.ClusterName, Addr: ip2, Port: 7946, Incarnation: 2}
+	a3 := alive{Node: "node3", ClusterName: m1.config.ClusterName, Addr: ip3, Port: 7946, Incarnation: 3}
+
+	a1buf, a1err := encode(aliveMsg, a1)
+	if a1err != nil {
+		t.Fatal("Unexpected error: %v", a1err)
+	}
+
+	a2buf, a2err := encode(aliveMsg, a2)
+	if a2err != nil {
+		t.Fatal("Unexpected error: %v", a2err)
+	}
+
+	a3buf, a3err := encode(aliveMsg, a3)
+	if a3err != nil {
+		t.Fatal("Unexpected error: %v", a3err)
+	}
+
+	m1.handleAlive(a1buf.Bytes()[1:], addr)
+	m1.handleAlive(a2buf.Bytes()[1:], addr)
+	m1.handleAlive(a3buf.Bytes()[1:], addr)
+
+	if len(m1.nodes) != 3 {
+		t.Fatalf("Should have 3 nodes in memberlist, but have %v", len(m1.nodes))
+	}
+
+	// All nodes should be in alive state
+	for k, v := range m1.nodeMap {
+		if v.State != stateAlive {
+			t.Fatalf("Node %v should be in alive state", k)
+		}
+	}
+
+	// Suspect message with same cluster name
+	s1 := suspect{Node: "node2", Incarnation: 2, ClusterName: m1.config.ClusterName}
+
+	s1buf, s1err := encode(suspectMsg, s1)
+	if s1err != nil {
+		t.Fatal("Unexpected error: %v", s1err)
+	}
+
+	// Send the message, shouldn't get discarded; state should change
+	m1.handleSuspect(s1buf.Bytes()[1:], addr)
+
+	if m1.nodeMap[a2.Node].State != stateSuspect {
+		t.Fatal("Node 2 should be in suspect state")
+	}
+
+	// Send a suspect message for node 3, but with different cluster name
+	s2 := suspect{Node: "node3", Incarnation: 3, ClusterName: "badCluster"}
+
+	s2buf, s2err := encode(suspectMsg, s2)
+	if s2err != nil {
+		t.Fatal("Unexpected error: %v", s2err)
+	}
+
+	m1.handleSuspect(s2buf.Bytes()[1:], addr)
+
+	// Suspect message should be discarded and have not affected 'real' node 3
+	if m1.nodeMap[a3.Node].State != stateAlive {
+		t.Fatalf("Node 3 should still be in alive state")
+	}
 }
 
-// handleAlive() should discard messages with different Cluster names
-func TestHandleAlive_ClusterName(t *testing.T) {
+func TestHandleAlive(t *testing.T) {
 	addr1 := getBindAddr()
 	addr2 := getBindAddr()
 	addr3 := getBindAddr()
@@ -548,11 +622,84 @@ func TestHandleAlive_ClusterName(t *testing.T) {
 	}
 }
 
-func TestHandleDead_ClusterName(t *testing.T) {
+func TestHandleDead(t *testing.T) {
+	addr1 := getBindAddr()
+	addr2 := getBindAddr()
+	addr3 := getBindAddr()
+	ip1 := []byte(addr1)
+	ip2 := []byte(addr2)
+	ip3 := []byte(addr3)
 
+	m1 := HostMemberlist(addr1.String(), t, nil)
+
+	// dummy address
+	addr := m1.udpListener.LocalAddr()
+
+	a1 := alive{Node: "node1", ClusterName: m1.config.ClusterName, Addr: ip1, Port: 7946, Incarnation: 1}
+	a2 := alive{Node: "node2", ClusterName: m1.config.ClusterName, Addr: ip2, Port: 7946, Incarnation: 2}
+	a3 := alive{Node: "node3", ClusterName: m1.config.ClusterName, Addr: ip3, Port: 7946, Incarnation: 3}
+
+	a1buf, a1err := encode(aliveMsg, a1)
+	if a1err != nil {
+		t.Fatal("Unexpected error: %v", a1err)
+	}
+
+	a2buf, a2err := encode(aliveMsg, a2)
+	if a2err != nil {
+		t.Fatal("Unexpected error: %v", a2err)
+	}
+
+	a3buf, a3err := encode(aliveMsg, a3)
+	if a3err != nil {
+		t.Fatal("Unexpected error: %v", a3err)
+	}
+
+	m1.handleAlive(a1buf.Bytes()[1:], addr)
+	m1.handleAlive(a2buf.Bytes()[1:], addr)
+	m1.handleAlive(a3buf.Bytes()[1:], addr)
+
+	if len(m1.nodes) != 3 {
+		t.Fatalf("Should have 3 nodes in memberlist, but have %v", len(m1.nodes))
+	}
+
+	// All nodes should be in alive state
+	for k, v := range m1.nodeMap {
+		if v.State != stateAlive {
+			t.Fatalf("Node %v should be in alive state", k)
+		}
+	}
+
+	// Dead message with same cluster name
+	d1 := dead{Node: "node2", ClusterName: m1.config.ClusterName, Incarnation: 2}
+
+	d1buf, d1err := encode(deadMsg, d1)
+	if d1err != nil {
+		t.Fatal("Unexpected error: %v", d1err)
+	}
+
+	// Send the message, shouldn't get discarded; state should change
+	m1.handleDead(d1buf.Bytes()[1:], addr)
+
+	if m1.nodeMap[a2.Node].State != stateDead {
+		t.Fatal("Node 2 should be in dead state")
+	}
+
+	// Send a dead message for node 3, but with different cluster name
+	d2 := dead{Node: "node3", ClusterName: "badCluster", Incarnation: 3}
+
+	d2buf, d2err := encode(deadMsg, d2)
+	if d2err != nil {
+		t.Fatal("Unexpected error: %v", d2err)
+	}
+
+	m1.handleDead(d2buf.Bytes()[1:], addr)
+
+	// Dead message should be discarded and have not affected 'real' node 3
+	if m1.nodeMap[a3.Node].State != stateAlive {
+		t.Fatalf("Node 3 should still be in alive state")
+	}
 }
 
-// This will be *very* hard to test, due to the length of the method
+// TODO: This probably should get tested as well, but will require a bit of setup
 func TestReadRemoteState(t *testing.T) {
-
 }
